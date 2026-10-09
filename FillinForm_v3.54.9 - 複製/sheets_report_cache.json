@@ -1,6 +1,6 @@
 {
-  "hash": "6fb8929aafdc6306c43676680218d5e198d1352ecceca7d40beeee4d5ac288cb",
-  "last_updated": 0.0,
+  "hash": "afe22b06a6774307d2483379070a323b37fd5b038d8820943920b3b4d2612b2c",
+  "last_updated": 1791580761.8323474,
   "latest_version": "9.99999XD 不是哥們，我改朝換代了阿",
   "download_url": "https://drive.google.com/drive/u/0/folders/1YCo4l4EKwDEpbpEmsZvqvxUrYA40zlAy",
   "changelog": "",
@@ -11,7 +11,7 @@
       "name": "游翔宇",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 2,
@@ -19,7 +19,7 @@
       "name": "徐巧芸",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 3,
@@ -27,7 +27,7 @@
       "name": "周重鈞",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 4,
@@ -35,7 +35,7 @@
       "name": "張凱森",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 5,
@@ -43,7 +43,7 @@
       "name": "連儷芳",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 6,
@@ -51,7 +51,7 @@
       "name": "魏晨名",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 7,
@@ -59,7 +59,7 @@
       "name": "葉宸宇",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 8,
@@ -75,7 +75,7 @@
       "name": "葉家均",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 10,
@@ -83,7 +83,7 @@
       "name": "林碩斌",
       "reported": "未報告",
       "report_order": null,
-      "group": 1
+      "group": null
     },
     {
       "order": 11,
@@ -91,7 +91,7 @@
       "name": "陳皓岳",
       "reported": "未報告",
       "report_order": null,
-      "group": 2
+      "group": null
     },
     {
       "order": 12,
@@ -107,7 +107,7 @@
       "name": "林聖傑",
       "reported": "未報告",
       "report_order": null,
-      "group": 2
+      "group": null
     },
     {
       "order": 14,
@@ -115,7 +115,7 @@
       "name": "Santacitta Harris Islan",
       "reported": "未報告",
       "report_order": null,
-      "group": 2
+      "group": null
     },
     {
       "order": 15,
@@ -123,7 +123,7 @@
       "name": "陳首宇",
       "reported": "未報告",
       "report_order": null,
-      "group": 2
+      "group": null
     },
     {
       "order": 16,
@@ -131,7 +131,7 @@
       "name": "盧詠耀",
       "reported": "未報告",
       "report_order": null,
-      "group": 2
+      "group": null
     },
     {
       "order": 17,
@@ -139,7 +139,7 @@
       "name": "邱千芷",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 18,
@@ -147,7 +147,7 @@
       "name": "蔣伊婷",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 19,
@@ -155,7 +155,7 @@
       "name": "賴韋宏",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 20,
@@ -163,7 +163,7 @@
       "name": "高俊傑",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 21,
@@ -171,7 +171,7 @@
       "name": "連紹傑",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 22,
@@ -179,7 +179,7 @@
       "name": "張家瑋",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 23,
@@ -211,7 +211,7 @@
       "name": "吳享叡",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 27,
@@ -219,7 +219,7 @@
       "name": "劉孟勛",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 28,
@@ -227,7 +227,7 @@
       "name": "陳昱霖",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     },
     {
       "order": 29,
@@ -235,7 +235,7 @@
       "name": "陳楷威",
       "reported": "未報告",
       "report_order": null,
-      "group": 3
+      "group": null
     }
   ]
 }
