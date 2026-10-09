@@ -79,6 +79,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loadStudents();
     loadSheetsReport();
     initWebSocket();
+    // 雲端資料庫雙重保險輪詢 (每 15 秒主動核對一次)
+    setInterval(loadSheetsReport, 15000);
 
     const commentInput = document.getElementById("commentInput");
     if (commentInput) {
@@ -1376,18 +1378,21 @@ class VerticalMarqueeController {
         this.badge = document.getElementById("sheetsReportStatusBadge");
         this.syncTime = document.getElementById("sheetsReportSyncTime");
         this.notice = document.getElementById("sheetsReportNotice");
+        this.btnRefresh = document.getElementById("btnSheetsRefresh");
         this.btnPrev = document.getElementById("btnMarqueePrev");
         this.btnNext = document.getElementById("btnMarqueeNext");
         this.btnPlayPause = document.getElementById("btnMarqueePlayPause");
         this.indicator = document.getElementById("marqueeIndexIndicator");
 
-        this.groups = [];
-        this.currentIndex = 1; // 1-indexed into track.children (0 is clone of last)
+        this.allGroups = [];
+        this._lastGroupsJson = "";
+        this.headIndex = 0; // 當前頂部第一張卡片的組別在 allGroups 中的索引
+        this.maxVisible = 10; // 視窗最多同時容納 10 組
         this.isTransitioning = false;
         this.isPaused = false;
         this.timer = null;
-        this.stayDuration = 5000; // 5 秒完整閱讀停留
-        this.transitionDuration = 500; // 500ms 平順切換動畫
+        this.stayDuration = 4500; // 停留 4.5 秒供學生閱讀
+        this.animDuration = 600;  // 600ms 平滑過渡曲線
 
         this.accumulatedDelta = 0;
         this.wheelResetTimer = null;
@@ -1398,17 +1403,24 @@ class VerticalMarqueeController {
     initControls() {
         if (!this.viewport || !this.track) return;
 
+        // 0. 手動強制刷新按鈕
+        if (this.btnRefresh) {
+            this.btnRefresh.addEventListener("click", () => {
+                this.manualRefresh();
+            });
+        }
+
         // 1. 小型閱讀控制按鈕
         if (this.btnPrev) {
             this.btnPrev.addEventListener("click", () => {
-                if (this.groups.length >= 2 && !this.isTransitioning) {
+                if (this.allGroups.length >= 2 && !this.isTransitioning) {
                     this.slidePrev(true);
                 }
             });
         }
         if (this.btnNext) {
             this.btnNext.addEventListener("click", () => {
-                if (this.groups.length >= 2 && !this.isTransitioning) {
+                if (this.allGroups.length >= 2 && !this.isTransitioning) {
                     this.slideNext(true);
                 }
             });
@@ -1419,16 +1431,10 @@ class VerticalMarqueeController {
             });
         }
 
-        // 2. 軌道 transitionend 事件 (無縫銜接瞬跳重置)
-        this.track.addEventListener("transitionend", (e) => {
-            if (e.target !== this.track || e.propertyName !== "transform") return;
-            this.handleTransitionEnd();
-        });
-
-        // 3. 滾輪換組支援 (不阻擋左側主面板的垂直平滑滾動，按住 Shift 時可快速換組)
+        // 2. 滾輪換組支援 (按住 Shift 時快速換組，不阻擋一般滾動)
         const handleWheel = (e) => {
-            if (this.groups.length < 2) return;
-            if (!e.shiftKey) return; // 讓一般滑鼠滾輪自由滾動左側控制面板
+            if (this.allGroups.length < 2) return;
+            if (!e.shiftKey) return;
 
             e.preventDefault();
             e.stopPropagation();
@@ -1442,7 +1448,7 @@ class VerticalMarqueeController {
                 this.accumulatedDelta = 0;
             }, 250);
 
-            const THRESHOLD = 30; // 觸控板與滾輪平順門檻
+            const THRESHOLD = 30;
             if (this.accumulatedDelta >= THRESHOLD) {
                 this.accumulatedDelta = 0;
                 this.slideNext(true);
@@ -1454,6 +1460,38 @@ class VerticalMarqueeController {
 
         if (this.viewport) {
             this.viewport.addEventListener("wheel", handleWheel, { passive: false });
+        }
+
+        window.addEventListener("resize", () => {
+            this.adjustViewportHeight();
+        });
+    }
+
+    async manualRefresh() {
+        if (this.btnRefresh) {
+            this.btnRefresh.classList.add("is-refreshing");
+            this.btnRefresh.disabled = true;
+        }
+        if (this.badge) {
+            const lbl = this.badge.querySelector(".status-label") || this.badge;
+            lbl.textContent = "同步中...";
+        }
+
+        try {
+            const resp = await fetch("/api/sheets_report/refresh", { method: "POST" });
+            if (resp.ok) {
+                const data = await resp.json();
+                this.updateData(data);
+            }
+        } catch (e) {
+            console.error("手動同步失敗:", e);
+        } finally {
+            setTimeout(() => {
+                if (this.btnRefresh) {
+                    this.btnRefresh.classList.remove("is-refreshing");
+                    this.btnRefresh.disabled = false;
+                }
+            }, 600);
         }
     }
 
@@ -1473,7 +1511,7 @@ class VerticalMarqueeController {
                 if (pauseTag) pauseTag.style.display = "none";
                 this.btnPlayPause.title = "暫停自動輪播";
                 this.btnPlayPause.classList.remove("is-paused");
-                if (this.groups.length >= 2 && !this.isTransitioning) {
+                if (this.allGroups.length >= 2 && !this.isTransitioning) {
                     this.scheduleNextStay();
                 }
             }
@@ -1489,116 +1527,64 @@ class VerticalMarqueeController {
 
     scheduleNextStay() {
         this.clearTimer();
-        if (this.isPaused || this.groups.length < 2) return;
+        if (this.isPaused || this.allGroups.length < 2) return;
         this.timer = setTimeout(() => {
-            if (!this.isPaused && !this.isTransitioning && this.groups.length >= 2) {
+            if (!this.isPaused && !this.isTransitioning && this.allGroups.length >= 2) {
                 this.slideNext(false);
             }
         }, this.stayDuration);
     }
 
-    getCardOffset(index) {
-        const cards = this.track.children;
-        if (!cards || cards.length === 0) return 0;
-        const targetCard = cards[index];
-        if (!targetCard) return 0;
-        const trackPaddingTop = parseFloat(window.getComputedStyle(this.track).paddingTop) || 0;
-        return targetCard.offsetTop - trackPaddingTop;
-    }
-
-    applyTransform(animated) {
-        if (!this.track) return;
-        if (animated) {
-            this.track.style.transition = `transform ${this.transitionDuration}ms cubic-bezier(0.25, 1, 0.5, 1)`;
-        } else {
-            this.track.style.transition = "none";
-        }
-        const offset = this.getCardOffset(this.currentIndex);
-        this.track.style.transform = `translateY(-${offset}px)`;
-
-        // 更新 active 高亮定位線 (僅中央卡片有 2px 青色定位線與微弱底色)
-        if (this.track.children) {
-            Array.from(this.track.children).forEach((card, idx) => {
-                if (idx === this.currentIndex) {
-                    card.classList.add("is-active");
-                } else {
-                    card.classList.remove("is-active");
-                }
-            });
-        }
-    }
-
-    slideNext(isManual = false) {
-        if (this.isTransitioning || this.groups.length < 2) return;
-        this.clearTimer();
-        this.isTransitioning = true;
-        this.currentIndex++;
-        this.applyTransform(true);
-        this.updateIndicator();
-    }
-
-    slidePrev(isManual = false) {
-        if (this.isTransitioning || this.groups.length < 2) return;
-        this.clearTimer();
-        this.isTransitioning = true;
-        this.currentIndex--;
-        this.applyTransform(true);
-        this.updateIndicator();
-    }
-
-    handleTransitionEnd() {
-        const total = this.groups.length;
-        if (total < 2) {
-            this.isTransitioning = false;
-            return;
-        }
-
-        // 首尾無縫循環接點瞬切 (無閃爍、無倒滑回捲)
-        if (this.currentIndex === total + 1) {
-            this.currentIndex = 1;
-            this.applyTransform(false);
-            void this.track.offsetHeight;
-        } else if (this.currentIndex === 0) {
-            this.currentIndex = total;
-            this.applyTransform(false);
-            void this.track.offsetHeight;
-        }
-
-        this.isTransitioning = false;
-        this.updateIndicator();
-
-        // 完成位移後完整停留 5 秒
-        if (!this.isPaused) {
-            this.scheduleNextStay();
-        }
-    }
-
     updateIndicator() {
         if (!this.indicator) return;
-        const total = this.groups.length;
+        const total = this.allGroups.length;
         if (total === 0) {
             this.indicator.textContent = "";
             return;
         }
-        let realIndex = 1;
-        if (total >= 2) {
-            if (this.currentIndex === 0) {
-                realIndex = total;
-            } else if (this.currentIndex === total + 1) {
-                realIndex = 1;
-            } else {
-                realIndex = this.currentIndex;
-            }
-        }
-        const realStr = String(realIndex).padStart(2, "0");
+        const currentGroup = this.allGroups[this.headIndex];
+        const gid = currentGroup ? currentGroup.group_id : (this.headIndex + 1);
+        const gidStr = String(gid).padStart(2, "0");
         const totStr = String(total).padStart(2, "0");
-        this.indicator.textContent = `QUEUE ${realStr} / ${totStr}`;
+        this.indicator.textContent = `QUEUE ${gidStr} / ${totStr}`;
+    }
+
+    updateActiveCardHighlight() {
+        const cards = Array.from(this.track.children);
+        cards.forEach((card, idx) => {
+            if (idx === 0) {
+                card.classList.add("is-active");
+            } else {
+                card.classList.remove("is-active");
+            }
+        });
+    }
+
+    adjustViewportHeight() {
+        if (!this.viewport || !this.track) return;
+        const cards = Array.from(this.track.children).filter(c => c.classList && c.classList.contains("queue-card"));
+        if (cards.length === 0) {
+            this.viewport.style.height = "auto";
+            return;
+        }
+        const count = Math.min(cards.length, this.maxVisible);
+        let h = 0;
+        for (let i = 0; i < count; i++) {
+            h += cards[i].offsetHeight;
+        }
+        if (h > 0) {
+            this.viewport.style.height = `${h + 8}px`;
+        }
     }
 
     renderCardHtml(group) {
+        if (!group) return "";
         const numInt = parseInt(group.group_id, 10);
         const numStr = isNaN(numInt) ? String(group.group_id) : String(numInt).padStart(2, "0");
         const groupNameCn = group.group_name || `第 ${numInt || group.group_id} 組`;
+
+        const statusType = group.status === "已報告" ? "reported" : (group.status === "報告中" ? "reporting" : "unreported");
+        const statusText = group.status || "未報告";
 
         const membersHtml = (group.members || []).map(m => {
             const sid = escapeHtml(m.student_id);
@@ -1619,7 +1605,7 @@ class VerticalMarqueeController {
             </div>`;
         }).join("");
 
-        return `<div class="queue-card">
+        return `<div class="queue-card" data-gid="${escapeHtml(group.group_id)}">
             <!-- [A] 組別識別區 -->
             <div class="queue-col-group">
                 <span class="group-num">${numStr}</span>
@@ -1632,18 +1618,204 @@ class VerticalMarqueeController {
             </div>
             <!-- [C] 報告狀態區 -->
             <div class="queue-col-status">
-                <div class="status-capsule reported">
+                <div class="status-capsule ${statusType}">
                     <span class="capsule-dot"></span>
-                    <span class="capsule-text">已報告</span>
+                    <span class="capsule-text">${escapeHtml(statusText)}</span>
                 </div>
             </div>
         </div>`;
     }
 
+    renderInitialTrack() {
+        this.clearTimer();
+        if (!this.track) return;
+
+        if (this.allGroups.length === 0) {
+            this.track.innerHTML = `<div class="marquee-empty-hint">QUEUE EMPTY</div>`;
+            this.updateIndicator();
+            return;
+        }
+
+        if (this.headIndex >= this.allGroups.length) {
+            this.headIndex = 0;
+        }
+
+        const countToShow = Math.min(this.maxVisible, this.allGroups.length);
+        let html = "";
+        for (let i = 0; i < countToShow; i++) {
+            const groupIndex = (this.headIndex + i) % this.allGroups.length;
+            html += this.renderCardHtml(this.allGroups[groupIndex]);
+        }
+        this.track.innerHTML = html;
+        this.adjustViewportHeight();
+        this.updateActiveCardHighlight();
+        this.updateIndicator();
+
+        if (this.allGroups.length >= 2 && !this.isPaused) {
+            this.scheduleNextStay();
+        }
+    }
+
+    slideNext(isManual = false) {
+        if (this.isTransitioning || this.allGroups.length < 2) return;
+        this.clearTimer();
+        this.isTransitioning = true;
+
+        const cards = Array.from(this.track.children);
+        if (cards.length === 0) {
+            this.isTransitioning = false;
+            return;
+        }
+
+        const topCard = cards[0];
+        const shiftY = topCard.offsetHeight; // 精確量測頂部即將移出的卡片高度
+
+        // 下一個即將自底部進入的組別索引
+        const nextGroupIndex = (this.headIndex + cards.length) % this.allGroups.length;
+        const nextGroup = this.allGroups[nextGroupIndex];
+
+        // 建立新卡片 DOM
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = this.renderCardHtml(nextGroup);
+        const incomingCard = tempDiv.firstElementChild;
+
+        // 初始狀態：在底部，完全透明，無偏移
+        incomingCard.style.opacity = "0";
+        incomingCard.style.transform = "translateY(0px)";
+        incomingCard.style.transition = "none";
+        this.track.appendChild(incomingCard);
+
+        // 強制重繪確保初始狀態生效
+        void incomingCard.offsetHeight;
+
+        const easeCurve = "cubic-bezier(0.25, 1, 0.5, 1)";
+        const dur = this.animDuration;
+
+        // 1. 頂部卡片向上移出且淡出
+        topCard.style.transition = `transform ${dur}ms ${easeCurve}, opacity ${dur * 0.75}ms ease-out`;
+        topCard.style.transform = `translateY(-${shiftY}px)`;
+        topCard.style.opacity = "0";
+
+        // 2. 中間所有卡片平滑向上推進
+        for (let i = 1; i < cards.length; i++) {
+            cards[i].style.transition = `transform ${dur}ms ${easeCurve}`;
+            cards[i].style.transform = `translateY(-${shiftY}px)`;
+        }
+
+        // 3. 底部新卡片由半透明滑入上升至正常不透明度
+        incomingCard.style.transition = `transform ${dur}ms ${easeCurve}, opacity ${dur}ms ${easeCurve}`;
+        incomingCard.style.transform = `translateY(-${shiftY}px)`;
+        incomingCard.style.opacity = "0.9";
+
+        // 動畫結束清理與狀態更新
+        setTimeout(() => {
+            if (topCard.parentNode === this.track) {
+                this.track.removeChild(topCard);
+            }
+            Array.from(this.track.children).forEach(c => {
+                c.style.transition = "none";
+                c.style.transform = "none";
+            });
+
+            this.headIndex = (this.headIndex + 1) % this.allGroups.length;
+            this.isTransitioning = false;
+            this.adjustViewportHeight();
+            this.updateActiveCardHighlight();
+            this.updateIndicator();
+
+            if (!this.isPaused) {
+                this.scheduleNextStay();
+            }
+        }, dur + 25);
+    }
+
+    slidePrev(isManual = false) {
+        if (this.isTransitioning || this.allGroups.length < 2) return;
+        this.clearTimer();
+        this.isTransitioning = true;
+
+        const cards = Array.from(this.track.children);
+        if (cards.length === 0) {
+            this.isTransitioning = false;
+            return;
+        }
+
+        // 上一個即將自頂部進入的組別索引
+        const prevGroupIndex = (this.headIndex - 1 + this.allGroups.length) % this.allGroups.length;
+        const prevGroup = this.allGroups[prevGroupIndex];
+
+        // 建立新卡片 DOM
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = this.renderCardHtml(prevGroup);
+        const incomingCard = tempDiv.firstElementChild;
+
+        // 插入在最前面
+        this.track.insertBefore(incomingCard, cards[0]);
+
+        const shiftY = incomingCard.offsetHeight;
+
+        // 初始狀態：新頂部卡片上移 -shiftY 且透明
+        incomingCard.style.transition = "none";
+        incomingCard.style.transform = `translateY(-${shiftY}px)`;
+        incomingCard.style.opacity = "0";
+
+        // 原本所有卡片也保持上移 -shiftY，以維持視覺停留在原地
+        cards.forEach(c => {
+            c.style.transition = "none";
+            c.style.transform = `translateY(-${shiftY}px)`;
+        });
+
+        void incomingCard.offsetHeight;
+
+        const easeCurve = "cubic-bezier(0.25, 1, 0.5, 1)";
+        const dur = this.animDuration;
+
+        // 執行動畫：整體平滑回到 0px
+        incomingCard.style.transition = `transform ${dur}ms ${easeCurve}, opacity ${dur}ms ${easeCurve}`;
+        incomingCard.style.transform = "translateY(0px)";
+        incomingCard.style.opacity = "1";
+
+        const bottomCard = cards[cards.length - 1];
+        for (let i = 0; i < cards.length - 1; i++) {
+            cards[i].style.transition = `transform ${dur}ms ${easeCurve}`;
+            cards[i].style.transform = "translateY(0px)";
+        }
+
+        const shouldRemoveBottom = cards.length >= Math.min(this.maxVisible, this.allGroups.length);
+        if (shouldRemoveBottom) {
+            bottomCard.style.transition = `transform ${dur}ms ${easeCurve}, opacity ${dur * 0.75}ms ease-out`;
+            bottomCard.style.transform = "translateY(0px)";
+            bottomCard.style.opacity = "0";
+        } else {
+            bottomCard.style.transition = `transform ${dur}ms ${easeCurve}`;
+            bottomCard.style.transform = "translateY(0px)";
+        }
+
+        setTimeout(() => {
+            if (shouldRemoveBottom && bottomCard.parentNode === this.track) {
+                this.track.removeChild(bottomCard);
+            }
+            Array.from(this.track.children).forEach(c => {
+                c.style.transition = "none";
+                c.style.transform = "none";
+            });
+
+            this.headIndex = prevGroupIndex;
+            this.isTransitioning = false;
+            this.adjustViewportHeight();
+            this.updateActiveCardHighlight();
+            this.updateIndicator();
+
+            if (!this.isPaused) {
+                this.scheduleNextStay();
+            }
+        }, dur + 25);
+    }
+
     updateData(payload) {
         if (!payload) return;
 
-        // 1. 低調狀態膠囊 (小圓點 + 即時同步)
+        // 1. 低調狀態膠囊
         if (this.badge) {
             const dot = this.badge.querySelector(".status-dot") || document.createElement("span");
             const lbl = this.badge.querySelector(".status-label") || document.createElement("span");
@@ -1680,88 +1852,50 @@ class VerticalMarqueeController {
             }
         }
 
-        // 2. 同步時間
+        // 2. 同步時間與即時心跳微光
         if (this.syncTime && payload.last_sync_time) {
             this.syncTime.textContent = `SYNC ${payload.last_sync_time}`;
+            this.syncTime.classList.add("sync-pulse");
+            setTimeout(() => {
+                if (this.syncTime) this.syncTime.classList.remove("sync-pulse");
+            }, 600);
         }
 
-        // 3. 取得已報告組別 (過濾未報告，同組成員一起顯示)
+        // 3. 取得所有隊列組別
         let groups = payload.groups || [];
         if (groups.length === 0 && payload.data && payload.data.length > 0) {
             const map = {};
             payload.data.forEach(item => {
-                if (item.reported !== "已報告") return;
-                const gid = item.group || 1;
+                const gid = item.group;
+                if (!gid) return;
                 if (!map[gid]) {
                     map[gid] = {
                         group_id: gid,
                         group_name: `第 ${gid} 組`,
-                        status: "已報告",
-                        members: []
+                        status: "未報告",
+                        members: [],
+                        min_report_order: 9999
                     };
+                }
+                const r_order = item.report_order;
+                if (r_order !== null && r_order !== undefined && r_order < map[gid].min_report_order) {
+                    map[gid].min_report_order = r_order;
                 }
                 map[gid].members.push(item);
             });
             groups = Object.keys(map).sort((a,b)=>Number(a)-Number(b)).map(k => map[k]);
         }
 
-        // 保存目前觀看中的組別 ID，局部更新時維持焦點
-        const currentGroupId = (this.groups.length > 0 && this.groups[this.currentIndex - 1])
-            ? this.groups[this.currentIndex - 1].group_id
-            : null;
-
-        this.groups = groups;
-        this.clearTimer();
-
-        // 4. 空狀態處理
-        if (this.groups.length === 0) {
-            this.track.innerHTML = `<div class="marquee-empty-hint">QUEUE EMPTY</div>`;
-            this.track.style.transform = "none";
-            this.track.style.transition = "none";
-            this.updateIndicator();
+        // 4. 比對組別結構是否變動 (無變動則保持當前跑馬燈動畫，不重複銷毀 DOM)
+        const newGroupsJson = JSON.stringify(groups);
+        if (this._lastGroupsJson === newGroupsJson && this.allGroups.length > 0) {
             return;
         }
+        this._lastGroupsJson = newGroupsJson;
 
-        // 5. 單組靜態處理 (不反覆移出再移入)
-        if (this.groups.length === 1) {
-            this.track.innerHTML = this.renderCardHtml(this.groups[0]);
-            this.currentIndex = 1;
-            this.track.style.transform = "none";
-            this.track.style.transition = "none";
-            this.applyTransform(false);
-            this.updateIndicator();
-            return;
-        }
-
-        // 6. 多組無縫循環結構構建: [clone_last, g0, g1, ..., clone_first]
-        const lastGroup = this.groups[this.groups.length - 1];
-        const firstGroup = this.groups[0];
-
-        let trackHtml = "";
-        trackHtml += this.renderCardHtml(lastGroup); // index 0 (clone of last)
-        for (let i = 0; i < this.groups.length; i++) {
-            trackHtml += this.renderCardHtml(this.groups[i]); // index 1 .. N
-        }
-        trackHtml += this.renderCardHtml(firstGroup); // index N+1 (clone of first)
-
-        this.track.innerHTML = trackHtml;
-
-        // 維持當前焦點組別
-        if (currentGroupId !== null) {
-            const foundIdx = this.groups.findIndex(g => g.group_id === currentGroupId);
-            this.currentIndex = foundIdx !== -1 ? (foundIdx + 1) : 1;
-        } else {
-            this.currentIndex = 1;
-        }
-
-        // 立即對齊且無動畫跳躍
-        this.applyTransform(false);
-        this.updateIndicator();
-
-        // 5 秒後推進下一組
-        if (!this.isPaused) {
-            this.scheduleNextStay();
-        }
+        this.allGroups = groups;
+        this.headIndex = 0;
+        this.renderInitialTrack();
     }
 }
 
@@ -1770,6 +1904,7 @@ let sheetsMarqueeCtrl = null;
 function renderSheetsReport(res) {
     if (!sheetsMarqueeCtrl) {
         sheetsMarqueeCtrl = new VerticalMarqueeController();
+        window.sheetsMarqueeCtrl = sheetsMarqueeCtrl;
     }
     sheetsMarqueeCtrl.updateData(res);
 }

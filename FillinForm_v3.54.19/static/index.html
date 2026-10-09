@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Zen+Kaku+Gothic+New:wght@900&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=3.54.18">
 
     <!-- 自動偵測新版強制重新整理 (等同由程式自動幫使用者按 Ctrl+F5) -->
     <script>
@@ -250,6 +250,13 @@
                             <span class="status-dot"></span>
                             <span class="status-label">即時同步</span>
                         </div>
+                        <button type="button" class="btn-marquee-ghost btn-queue-refresh" id="btnSheetsRefresh" title="立即同步 Google Sheets (獲取最新報告名單)">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
                         <div class="marquee-controls" id="marqueeControls">
                             <button type="button" class="btn-marquee-ghost" id="btnMarqueePrev" title="上一組 (亦可滾輪向上)">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
@@ -700,10 +707,10 @@
 
     <!-- 腳本引入 -->
     <script src="/static/js/score_engine.js"></script>
-    <script src="/static/js/gacha.js"></script>
-    <script src="/static/js/mascot.js"></script>
-    <script src="/static/js/orb_border_controller.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/gacha.js?v=3.54.18"></script>
+    <script src="/static/js/mascot.js?v=3.54.18"></script>
+    <script src="/static/js/orb_border_controller.js?v=3.54.18"></script>
+    <script src="/static/js/app.js?v=3.54.18"></script>
 
     <!-- 日系幾何彈性輪播腳本 (yui540 動漫彈簧風，無 yui / 無章節標籤) -->
     <script>

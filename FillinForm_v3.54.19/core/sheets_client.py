@@ -27,7 +27,7 @@ DEFAULT_EXPORT_URL = (
     f"https://docs.google.com/spreadsheets/d/{DEFAULT_SPREADSHEET_ID}/export?format=csv&gid={DEFAULT_GID}"
 )
 
-REQUIRED_COLUMNS = ["學號", "姓名", "報告與否"]
+REQUIRED_COLUMNS = ["學號", "姓名"]
 
 
 def is_version_outdated(local_ver: str, remote_ver: Optional[str]) -> bool:
@@ -75,7 +75,7 @@ class SheetsReportManager:
     def __init__(
         self,
         csv_url: Optional[str] = None,
-        poll_interval: int = 30,
+        poll_interval: int = 8,
         timeout: int = 10,
         cache_file: str = CACHE_FILE_PATH,
     ):
@@ -233,7 +233,7 @@ class SheetsReportManager:
 
         idx_sid = col_map["學號"]
         idx_name = col_map["姓名"]
-        idx_reported = col_map["報告與否"]
+        idx_reported = col_map.get("報告與否")
         idx_order = col_map.get("順序")
         idx_report_order = col_map.get("報告順序")
         idx_group = col_map.get("報告組別") or col_map.get("組別")
@@ -282,17 +282,7 @@ class SheetsReportManager:
             if not val_name:
                 return False, [], f"第 {row_num} 列：「姓名」欄位不可為空"
 
-            # 規則 4: 報告與否 (只接受「未報告」與「已報告」)
-            if not val_reported:
-                return False, [], f"第 {row_num} 列：「報告與否」欄位不可為空"
-            if val_reported not in ["未報告", "已報告"]:
-                return (
-                    False,
-                    [],
-                    f"第 {row_num} 列：「報告與否」僅接受「未報告」或「已報告」，實際為「{val_reported}」",
-                )
-
-            # 規則 5: 報告順序 (正整數或空白，空白表示尚未設定)
+            # 規則 4: 報告順序 (正整數或空白，空白表示尚未設定)
             report_order_int: Optional[int] = None
             if val_report_order:
                 if not (val_report_order.isdigit() and int(val_report_order) > 0):
@@ -302,7 +292,6 @@ class SheetsReportManager:
                         f"第 {row_num} 列：「報告順序」必須為正整數或空白，實際為「{val_report_order}」",
                     )
                 report_order_int = int(val_report_order)
-                # 第一版非空報告順序重複視為資料錯誤
                 if report_order_int in seen_report_orders:
                     orig_row = seen_report_orders[report_order_int]
                     return (
@@ -312,25 +301,36 @@ class SheetsReportManager:
                     )
                 seen_report_orders[report_order_int] = row_num
 
-            # 組別歸屬 (優先讀取試算表「報告組別」，未填則依附錄名冊 fallback)
+            # 規則 5: 報告與否 (相容支援；若試算表無此欄或空白，則依「是否有報告順序」自動判定：有順序 = 已報告，無順序 = 未報告)
+            if val_reported:
+                if val_reported not in ["未報告", "已報告"]:
+                    return (
+                        False,
+                        [],
+                        f"第 {row_num} 列：「報告與否」僅接受「未報告」或「已報告」，實際為「{val_reported}」",
+                    )
+                final_reported = val_reported
+            else:
+                final_reported = "已報告" if report_order_int is not None else "未報告"
+
+            # 組別歸屬 (優先讀取試算表「報告組別」，若指定「報告順序」或「已報告」則自對應名冊讀取，其餘未排定者為 None)
             group_val = None
             if val_group:
                 if val_group.isdigit():
                     group_val = int(val_group)
                 else:
                     group_val = val_group
-            else:
+            elif report_order_int is not None or final_reported == "已報告":
                 student_info = STUDENT_MAP.get(val_sid.upper())
-                if student_info:
-                    group_val = student_info.get("group", 1)
-                else:
-                    group_val = 1
+                group_val = student_info.get("group", 1) if student_info else 1
+            else:
+                group_val = None
 
             validated_rows.append({
                 "order": order_int,
                 "student_id": val_sid,
                 "name": val_name,
-                "reported": val_reported,
+                "reported": final_reported,
                 "report_order": report_order_int,
                 "group": group_val,
             })
@@ -340,14 +340,18 @@ class SheetsReportManager:
         return True, validated_rows, None
 
     def fetch_remote_csv(self) -> Tuple[bool, Optional[str], Optional[str]]:
-        """透過 HTTP 下載遠端 Google Sheets 唯讀 CSV (帶超時防禦)"""
+        """透過 HTTP 下載遠端 Google Sheets 唯讀 CSV (帶超時防禦與防快取時間戳)"""
         url = self.get_csv_url()
+        sep = "&" if "?" in url else "?"
+        bust_url = f"{url}{sep}_cb={int(time.time() * 1000)}"
         try:
             resp = requests.get(
-                url,
+                bust_url,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept": "text/csv, text/plain, */*",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
                 },
                 timeout=self.timeout,
             )
@@ -439,30 +443,61 @@ class SheetsReportManager:
             1 for s in self.current_data if s.get("reported") == "已報告"
         )
 
-        # 依組別彙整已報告的學生 (未報告不顯示)
+        # 依組別彙整隊列 (包含已報告與已排定報告組別/順序的所有組別)
         groups_map: Dict[Any, Dict[str, Any]] = {}
         for item in self.current_data:
-            if item.get("reported") != "已報告":
+            gid = item.get("group")
+            if gid is None:
                 continue
-            gid = item.get("group", 1)
+
             if gid not in groups_map:
                 groups_map[gid] = {
                     "group_id": gid,
                     "group_name": f"第 {gid} 組",
-                    "status": "已報告",
+                    "status": "未報告",
                     "members": [],
+                    "min_report_order": 9999,
                 }
+
+            r_order = item.get("report_order")
+            if r_order is not None and r_order < groups_map[gid]["min_report_order"]:
+                groups_map[gid]["min_report_order"] = r_order
+
             groups_map[gid]["members"].append({
                 "student_id": item["student_id"],
                 "name": item["name"],
+                "reported": item.get("reported", "未報告"),
                 "report_order": item.get("report_order"),
                 "order": item.get("order"),
             })
 
-        # 組別依序排序
+        # 計算每組報告狀態與成員排序
+        for gid, g_info in groups_map.items():
+            reported_members = sum(1 for m in g_info["members"] if m["reported"] == "已報告")
+            total_members = len(g_info["members"])
+            if reported_members == total_members and total_members > 0:
+                g_info["status"] = "已報告"
+            elif reported_members > 0:
+                g_info["status"] = "報告中"
+            else:
+                g_info["status"] = "未報告"
+
+            g_info["members"].sort(
+                key=lambda m: (m["report_order"] if m["report_order"] is not None else 9999, m["order"])
+            )
+
+        # 排序隊列組別：優先依最小報告順序 (min_report_order)，次依組別數字
+        def sort_key(gid):
+            info = groups_map[gid]
+            m_order = info["min_report_order"]
+            num_gid = int(gid) if str(gid).isdigit() else 9999
+            return (m_order, num_gid)
+
         groups_list: List[Dict[str, Any]] = []
-        for gid in sorted(groups_map.keys(), key=lambda x: (int(x) if str(x).isdigit() else str(x))):
+        for gid in sorted(groups_map.keys(), key=sort_key):
             g_item = groups_map[gid]
+            if g_item["min_report_order"] == 9999:
+                g_item["min_report_order"] = None
             groups_list.append(g_item)
 
         return {
@@ -500,11 +535,10 @@ class SheetsReportManager:
             try:
                 await asyncio.sleep(self.poll_interval)
                 ok, changed = await self.update_once()
-                # 只有當資料變更或狀態產生變化時，才觸發前端更新推播
-                if changed or not ok:
-                    await on_update_callback(self.get_payload(), force=False)
+                # 每次輪詢皆推播最新同步資訊 (包含更新時間戳)，讓前端保持活躍同步心跳
+                await on_update_callback(self.get_payload(), force=changed)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"⚠️ [CloudSync] 背景輪詢提示: {e}", flush=True)
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)

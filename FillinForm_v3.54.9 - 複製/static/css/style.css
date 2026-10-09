@@ -1736,22 +1736,57 @@ body {
     gap: 2px;
 }
 
+.btn-queue-refresh {
+    color: var(--teal, #00f2fe);
+    background: rgba(0, 242, 254, 0.08);
+    border: 1px solid rgba(0, 242, 254, 0.22);
+    border-radius: 4px;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-queue-refresh:hover {
+    background: rgba(0, 242, 254, 0.2);
+    border-color: rgba(0, 242, 254, 0.5);
+    color: #ffffff;
+    box-shadow: 0 0 8px rgba(0, 242, 254, 0.35);
+}
+
+.btn-queue-refresh:active {
+    transform: scale(0.92);
+}
+
+.btn-queue-refresh.is-refreshing svg {
+    animation: queue-refresh-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes queue-refresh-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .paused-badge {
     font-size: 8.5px;
     font-weight: 700;
     letter-spacing: 0.6px;
 }
 
-/* 跑馬燈視窗 (多組隊列展覽：完整容納最多 5 組報告組別，向下延展) */
+/* 跑馬燈視窗 (多組隊列展覽：完整容納最多 10 組報告組別，向下延展) */
 .sheets-marquee-viewport {
-    height: 360px;
-    min-height: 180px;
-    max-height: 420px;
+    height: auto;
+    min-height: 140px;
+    max-height: 720px;
     position: relative;
     overflow: hidden;
     background: rgba(10, 13, 20, 0.45);
     border-radius: 8px;
     cursor: default;
+    transition: height 0.3s cubic-bezier(0.25, 1, 0.5, 1);
     /* 上下柔和淡出遮罩 */
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 10px, black calc(100% - 10px), transparent 100%);
     mask-image: linear-gradient(to bottom, transparent 0%, black 10px, black calc(100% - 10px), transparent 100%);
@@ -1775,13 +1810,14 @@ body {
     padding: 3px 6px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     border-left: 2px solid transparent;
-    opacity: 0.6;
+    opacity: 0.88;
     transition: opacity 0.3s ease, background 0.3s ease, border-color 0.3s ease;
     box-sizing: border-box;
     flex-shrink: 0;
+    will-change: transform, opacity;
 }
 
-/* 中央焦點閱讀卡：以微弱青色底色與定位線突出，不發亮、不放大 */
+/* 頂部焦點閱讀卡：以微弱青色底色與定位線突出 */
 .queue-card.is-active {
     background: rgba(77, 225, 208, 0.045);
     border-left: 2px solid #4DE1D0;
@@ -1936,6 +1972,12 @@ body {
     font-size: 10.5px;
     color: #525E75;
     letter-spacing: 0.5px;
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.queue-footer-sync.sync-pulse {
+    color: var(--teal, #00f2fe);
+    text-shadow: 0 0 6px rgba(0, 242, 254, 0.6);
 }
 
 .queue-footer-indicator {

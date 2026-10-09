@@ -3,7 +3,7 @@ FillinForm - Version & System Configuration
 Single source of truth for application version.
 """
 
-APP_VERSION = "3.54.13"
+APP_VERSION = "3.54.19"
 APP_NAME = "FillinForm"
 APP_TITLE = "台科大四平台同儕互評統一填寫工具"
 
