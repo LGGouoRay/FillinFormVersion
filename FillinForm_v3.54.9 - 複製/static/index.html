@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FillinForm — 台科大四平台同儕互評統一填寫工具</title>
+
+    <!-- 終極防快取聲明 (確保每次更新或開啟皆載入最新樣式與代碼) -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Zen+Kaku+Gothic+New:wght@900&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <!-- 自動偵測新版強制重新整理 (等同由程式自動幫使用者按 Ctrl+F5) -->
+    <script>
+    (function checkAutoHardReload() {
+        try {
+            fetch('/api/version?_t=' + Date.now(), { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var currentVer = data.app_version;
+                    var lastLoadedVer = localStorage.getItem('fillinform_last_loaded_version');
+                    if (currentVer && lastLoadedVer && currentVer !== lastLoadedVer) {
+                        localStorage.setItem('fillinform_last_loaded_version', currentVer);
+                        // 偵測到版本更新，立即自動進行強制無快取重載，免手動按 Ctrl+F5
+                        window.location.replace(window.location.pathname + '?_v=' + currentVer + '&_force_reload=' + Date.now());
+                    } else if (currentVer) {
+                        localStorage.setItem('fillinform_last_loaded_version', currentVer);
+                    }
+                })
+                .catch(function() {});
+        } catch (e) {}
+    })();
+    </script>
+</head>
+<body>
+    <!-- 頂部導航 -->
+    <header class="navbar">
+        <div class="brand">
+            <span class="brand-badge">FILLINFORM</span>
+            <div class="version-capsule" id="navVersionCapsule" title="點擊檢視版本狀態與更新資訊">
+                <span class="version-dot"></span>
+                <span class="version-text" id="navVersionText">v--</span>
+                <span class="version-status-pill" id="navVersionStatusPill">同步中...</span>
+                <span class="version-alert-badge" id="navVersionAlertBadge" style="display: none;">!</span>
+            </div>
+            <span class="brand-title">台科大四平台同儕互評統一填寫工具</span>
+        </div>
+
+        <!-- 頂部 Navbar 中央 micro-widget (日系幾何彈性動效輪播，無 yui、無章節標籤純淨版) -->
+        <div class="banner-ticker-widget">
+            <div class="ticker-card">
+                <!-- 字塊展示容器 (由 JS 自動生成並驅動 Staggered 彈簧動效) -->
+                <div class="ticker-grid-container" id="tickerContainer"></div>
+            </div>
+        </div>
+
+        <div class="nav-status">
+            <button type="button" class="btn-tab-ctrl" id="btnNavSetup" style="padding: 5px 12px; font-size: 12px; background: rgba(121, 40, 202, 0.2); border: 1px solid var(--purple);">⚙️ 帳號登入設定</button>
+            <div class="user-badge" id="userBadge">
+                <span class="live-indicator"></span>
+                <span id="navUserInfo">載入中...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主介面容器 -->
+    <main class="main-container">
+        <!-- 左側控制面板 -->
+        <aside class="control-panel">
+            <!-- 登入狀態檢測卡片 (未登入時鎖定並提示) -->
+            <div class="login-warning-card" id="loginWarningCard" style="display: none; background: rgba(255, 117, 160, 0.12); border: 1px solid var(--pink); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span style="font-size: 15px; font-weight: 700; color: var(--pink);">⚠️ 尚未完成帳號登入</span>
+                    <button type="button" class="btn-tab-ctrl" id="btnWarningLogin" style="background: var(--pink); color: #fff; font-weight: 700; border: none; padding: 4px 10px; cursor: pointer;">🔐 立即登入</button>
+                </div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 5px; line-height: 1.4;">
+                    請先完成學號與四大平台帳號登入，驗證通過後系統將自動解鎖評分與送出功能。
+                </div>
+            </div>
+
+            <!-- 學生選擇與防呆卡片 -->
+            <div class="glass-card" id="studentCard">
+                <div class="card-title">
+                    <span>👤 受評同學</span>
+                    <span id="targetStatusBadge" class="badge badge-status-pending">未選擇</span>
+                </div>
+                <div class="select-wrapper">
+                    <select id="studentSelect" class="student-select">
+                        <option value="">-- 請選擇受評同學 (共 29 人) --</option>
+                    </select>
+                    <div class="target-info-pill" id="targetInfoPill" style="display: none; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span>學號：<strong id="targetIdText">-</strong></span>
+                            <span>姓名：<strong id="targetNameText">-</strong></span>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 245, 212, 0.08); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 245, 212, 0.2);">
+                            <div>
+                                <span style="font-size: 13px; color: var(--teal); font-weight: 700;">✍️ 受評組別 (僅 S1 使用)：</span>
+                                <span style="font-size: 12px; color: var(--text-muted); display: block;">請自行輸入組別 (1~50)，組別僅用於 S1 評分</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <span style="font-size: 13px; color: var(--text-muted);">第</span>
+                                <input type="number" id="manualGroupInput" min="1" max="50" value="1" style="width: 54px; padding: 3px 6px; border-radius: 4px; background: rgba(10, 11, 16, 0.85); border: 1px solid var(--teal); color: var(--teal); font-weight: 700; text-align: center; font-size: 14px;" title="可自行輸入組別 (1~50)">
+                                <span style="font-size: 13px; color: var(--text-muted);">組</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 五向度評分滑桿 -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>📊 五向度評分</span>
+                    <span style="font-size: 13px; color: var(--text-muted);">1 ~ 100 分</span>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span>主題掌握 (30%)</span>
+                            <span class="slider-val-badge score-fx-container" id="valTopic" data-fx-state="normal">
+                                <span class="score-fx-layer score-fx-normal">85</span>
+                                <span class="score-fx-layer score-fx-low" aria-hidden="true">85</span>
+                                <span class="score-fx-layer score-fx-high" aria-hidden="true">85</span>
+                            </span>
+                        </div>
+                        <input type="range" min="1" max="100" value="85" class="slider-input" id="sliderTopic">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span>內容豐富 (30%)</span>
+                            <span class="slider-val-badge score-fx-container" id="valContent" data-fx-state="normal">
+                                <span class="score-fx-layer score-fx-normal">85</span>
+                                <span class="score-fx-layer score-fx-low" aria-hidden="true">85</span>
+                                <span class="score-fx-layer score-fx-high" aria-hidden="true">85</span>
+                            </span>
+                        </div>
+                        <input type="range" min="1" max="100" value="85" class="slider-input" id="sliderContent">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span>敘事技巧 (20%)</span>
+                            <span class="slider-val-badge score-fx-container" id="valNarrative" data-fx-state="normal">
+                                <span class="score-fx-layer score-fx-normal">85</span>
+                                <span class="score-fx-layer score-fx-low" aria-hidden="true">85</span>
+                                <span class="score-fx-layer score-fx-high" aria-hidden="true">85</span>
+                            </span>
+                        </div>
+                        <input type="range" min="1" max="100" value="85" class="slider-input" id="sliderNarrative">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span>簡報技巧 (10%)</span>
+                            <span class="slider-val-badge score-fx-container" id="valPresentation" data-fx-state="normal">
+                                <span class="score-fx-layer score-fx-normal">85</span>
+                                <span class="score-fx-layer score-fx-low" aria-hidden="true">85</span>
+                                <span class="score-fx-layer score-fx-high" aria-hidden="true">85</span>
+                            </span>
+                        </div>
+                        <input type="range" min="1" max="100" value="85" class="slider-input" id="sliderPresentation">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span>團隊表現 (10%)</span>
+                            <span class="slider-val-badge score-fx-container" id="valTeamwork" data-fx-state="normal">
+                                <span class="score-fx-layer score-fx-normal">85</span>
+                                <span class="score-fx-layer score-fx-low" aria-hidden="true">85</span>
+                                <span class="score-fx-layer score-fx-high" aria-hidden="true">85</span>
+                            </span>
+                        </div>
+                        <input type="range" min="1" max="100" value="85" class="slider-input" id="sliderTeamwork">
+                    </div>
+                </div>
+
+                <div class="total-score-card">
+                    <span>加權總分 (Weighted)</span>
+                    <span class="total-score-val score-fx-container is-total" id="totalScoreText" data-fx-state="normal">
+                        <span class="score-fx-layer score-fx-normal">85.0</span>
+                        <span class="score-fx-layer score-fx-low" aria-hidden="true">85.0</span>
+                        <span class="score-fx-layer score-fx-high" aria-hidden="true">85.0</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- 四平台換算數值即時預覽 -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>⚡ 四平台數值換算預覽</span>
+                </div>
+                <div class="preview-cards-grid">
+                    <div class="site-card-mini">
+                        <div class="site-card-header site-s1">S1 ChatGPT 站</div>
+                        <div class="site-card-val" id="prevS1">[4, 4, 4, 4, 4]</div>
+                    </div>
+                    <div class="site-card-mini">
+                        <div class="site-card-header site-s2">S2 Stanley 網</div>
+                        <div class="site-card-val" id="prevS2">85 (26/26/17/8/8)</div>
+                    </div>
+                    <div class="site-card-mini">
+                        <div class="site-card-header site-s3">S3 Google 表單</div>
+                        <div class="site-card-val" id="prevS3">85 (26/26/17/8/8)</div>
+                    </div>
+                    <div class="site-card-mini">
+                        <div class="site-card-header site-s4">S4 NLA 平台</div>
+                        <div class="site-card-val" id="prevS4">原值 (總分 85.0)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 評語與卡池抽卡 -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>💬 評語與建議</span>
+                    <span style="font-size: 12px; color: var(--pink);" id="gachaRarityText"></span>
+                </div>
+                <div class="comment-section">
+                    <textarea id="commentInput" class="comment-textarea" placeholder="請填寫對該位同學或小組的具體回饋..."></textarea>
+                    <div class="gacha-btn-wrapper">
+                        <button type="button" class="btn-gacha" id="btnGacha">
+                            <span>✨ 抽評語卡池</span>
+                        </button>
+                        <span style="font-size: 12px; color: var(--text-muted);">純靜態卡池．無分數偽裝</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作按鈕 -->
+            <div class="action-buttons">
+                <button type="button" class="btn-preview" id="btnPreviewFill">🪄 填寫預覽</button>
+                <button type="button" class="btn-submit" id="btnOpenReview">🚀 送出評分</button>
+            </div>
+
+            <!-- 看板娘容器 (置於學生報告資訊上方) -->
+            <div class="glass-card mascot-card" id="mascotContainer"></div>
+
+            <!-- Google Sheets 學生報告隊列 (Presentation Queue) -->
+            <div class="glass-card sheets-report-card" id="sheetsReportCard">
+                <div class="queue-panel-header">
+                    <div class="queue-header-left">
+                        <div class="queue-title-main">REPORT QUEUE</div>
+                        <div class="queue-title-sub">報告組別動態</div>
+                    </div>
+                    <div class="queue-header-right">
+                        <div id="sheetsReportStatusBadge" class="queue-status-capsule" title="雲端資料同步狀態">
+                            <span class="status-dot"></span>
+                            <span class="status-label">即時同步</span>
+                        </div>
+                        <div class="marquee-controls" id="marqueeControls">
+                            <button type="button" class="btn-marquee-ghost" id="btnMarqueePrev" title="上一組 (亦可滾輪向上)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                            </button>
+                            <button type="button" class="btn-marquee-ghost" id="btnMarqueePlayPause" title="暫停/繼續輪播">
+                                <span class="play-state-icon">⏸</span>
+                                <span class="paused-badge" id="marqueePausedTag" style="display: none;">PAUSED</span>
+                            </button>
+                            <button type="button" class="btn-marquee-ghost" id="btnMarqueeNext" title="下一組 (亦可滾輪向下)">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 狀態/錯誤提示訊息條 (僅於連線異常時提示) -->
+                <div id="sheetsReportNotice" style="display: none; font-size: 11px; padding: 6px 10px; border-radius: 6px; margin: 4px 0; line-height: 1.3;"></div>
+
+                <!-- 垂直無縫循環跑馬燈可視窗口 -->
+                <div class="sheets-marquee-viewport" id="sheetsMarqueeViewport" title="可在區塊內使用滾輪加速切換組別">
+                    <div class="sheets-marquee-track" id="sheetsMarqueeTrack">
+                        <div class="marquee-loading-hint">LOADING QUEUE...</div>
+                    </div>
+                </div>
+
+                <div class="queue-footer-info">
+                    <span id="sheetsReportSyncTime" class="queue-footer-sync">SYNC --:--:--</span>
+                    <span id="marqueeIndexIndicator" class="queue-footer-indicator">QUEUE 01 / 02</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 拖曳調整左右欄大小 Resizer -->
+        <div class="panel-resizer" id="mainResizer" title="左右拖曳調整左右欄寬度（雙擊還原預設寬度）">
+            <div class="resizer-handle"></div>
+        </div>
+
+        <!-- 右側即時畫面外層包裝區 -->
+        <section class="quad-wrapper">
+            <!-- 排版模式切換列 -->
+            <div class="quad-layout-bar">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 15px; font-weight: 700; color: var(--teal);">🖥️ 瀏覽器即時畫面</span>
+                    <span style="font-size: 12px; color: var(--text-muted);">(點擊畫面可直接呼叫真實瀏覽器)</span>
+                </div>
+                <div class="layout-toggle-btns">
+                    <button type="button" class="btn-layout-ctrl active" id="btnLayoutGrid" title="2x2 四等分網格檢視">⊞ 2x2 網格</button>
+                    <button type="button" class="btn-layout-ctrl" id="btnLayoutFocus" title="單一焦點大畫面放大檢視">🔍 焦點放大</button>
+                    <button type="button" class="btn-layout-ctrl" id="btnLayoutStack" title="垂直雙欄檢視">≡ 垂直雙欄</button>
+                </div>
+            </div>
+
+            <!-- 焦點模式分頁標籤 (焦點模式下顯示) -->
+            <div class="quad-focus-tabs" id="quadFocusTabs">
+                <div class="quad-focus-tab active" data-target="panelS1">S1: ChatGPT 互評站</div>
+                <div class="quad-focus-tab" data-target="panelS2">S2: Stanley 評分網</div>
+                <div class="quad-focus-tab" data-target="panelS3">S3: Google 表單</div>
+                <div class="quad-focus-tab" data-target="panelS4">S4: NLA 互評平台</div>
+            </div>
+
+            <!-- Google 表單登入提醒橫幅 -->
+            <div id="bannerS3GoogleLogin" style="display: none; background: rgba(255, 117, 160, 0.12); border: 1px solid var(--pink); border-radius: 6px; padding: 6px 12px; margin-bottom: 6px; align-items: center; justify-content: space-between; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 15px;">📋</span>
+                    <div>
+                        <strong style="color: var(--pink); font-size: 12px;">S3 Google 表單需要您的 Google 帳號登入</strong>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 1px;">
+                            此表單需登入 Google 才能填寫。請點擊右側按鈕至真實瀏覽器登入（一次即可保持登入）。
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-confirm-submit" onclick="openS3GoogleLogin()" style="white-space: nowrap; padding: 5px 12px; font-size: 11px; background: var(--pink); color: #fff; cursor: pointer;">👉 前往登入</button>
+            </div>
+
+            <!-- 即時畫面四面板容器 -->
+            <div class="quad-grid-container mode-grid" id="quadContainer">
+                <!-- S1 -->
+                <div class="quad-panel focus-active" id="panelS1">
+                    <div class="quad-header">
+                        <span class="site-s1">S1: ChatGPT 互評站</span>
+                        <div class="quad-actions">
+                            <button class="btn-tab-ctrl" onclick="bringToFront('S1')">🌐 切換</button>
+                            <button class="btn-tab-ctrl" onclick="toggleExpand('panelS1')">🔍 縮放</button>
+                        </div>
+                    </div>
+                    <div class="quad-view" onclick="bringToFront('S1')">
+                        <div class="quad-loading" id="loadS1">即時畫面載入中...</div>
+                        <img id="imgS1" class="quad-img" alt="S1 Stream">
+                    </div>
+                </div>
+
+                <!-- S2 -->
+                <div class="quad-panel" id="panelS2">
+                    <div class="quad-header">
+                        <span class="site-s2">S2: Stanley Owen 評分網</span>
+                        <div class="quad-actions">
+                            <button class="btn-tab-ctrl" onclick="bringToFront('S2')">🌐 切換</button>
+                            <button class="btn-tab-ctrl" onclick="toggleExpand('panelS2')">🔍 縮放</button>
+                        </div>
+                    </div>
+                    <div class="quad-view" onclick="bringToFront('S2')">
+                        <div class="quad-loading" id="loadS2">即時畫面載入中...</div>
+                        <img id="imgS2" class="quad-img" alt="S2 Stream">
+                    </div>
+                </div>
+
+                <!-- S3 -->
+                <div class="quad-panel" id="panelS3">
+                    <div class="quad-header">
+                        <span class="site-s3">S3: Google 表單</span>
+                        <div class="quad-actions">
+                            <button class="btn-tab-ctrl" id="btnS3LoginBadge" style="display:none; background: rgba(255, 117, 160, 0.25); border: 1px solid var(--pink); color: var(--pink); font-weight: 700;" onclick="openS3GoogleLogin()">⚠️ 前往登入 Google</button>
+                            <button class="btn-tab-ctrl" onclick="bringToFront('S3')">🌐 切換</button>
+                            <button class="btn-tab-ctrl" onclick="toggleExpand('panelS3')">🔍 縮放</button>
+                        </div>
+                    </div>
+                    <div class="quad-view" onclick="bringToFront('S3')">
+                        <div class="quad-loading" id="loadS3">即時畫面載入中...</div>
+                        <img id="imgS3" class="quad-img" alt="S3 Stream">
+                    </div>
+                </div>
+
+                <!-- S4 -->
+                <div class="quad-panel" id="panelS4">
+                    <div class="quad-header">
+                        <span class="site-s4">S4: NLA 互評平台</span>
+                        <div class="quad-actions">
+                            <button class="btn-tab-ctrl" onclick="bringToFront('S4')">🌐 切換</button>
+                            <button class="btn-tab-ctrl" onclick="toggleExpand('panelS4')">🔍 縮放</button>
+                        </div>
+                    </div>
+                    <div class="quad-view" onclick="bringToFront('S4')">
+                        <div class="quad-loading" id="loadS4">即時畫面載入中...</div>
+                        <img id="imgS4" class="quad-img" alt="S4 Stream">
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 頁面最下方聯絡資訊列 (水平居中) -->
+    <footer class="app-footer">
+        <div class="footer-center">
+            <span class="footer-icon">💬</span>
+            <span class="footer-text">有問題通知我：</span>
+            <a href="mailto:B11415028@mail.ntust.edu.tw" class="footer-email-link" title="點擊發送郵件">B11415028@mail.ntust.edu.tw</a>
+            <span class="footer-author-name">吳享叡</span>
+            <button type="button" class="btn-footer-copy" id="btnCopyFooterEmail" onclick="copyContactEmail('B11415028@mail.ntust.edu.tw')" title="點擊一鍵複製信箱">
+                📋 複製信箱
+            </button>
+        </div>
+    </footer>
+
+    <!-- 毛玻璃覆核視窗 (Modal) -->
+    <div class="modal-overlay" id="reviewModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>🛡️ 送出覆核確認清單</span>
+                </div>
+                <button class="modal-close" id="btnModalClose">&times;</button>
+            </div>
+
+            <div style="font-size: 13px; color: var(--text-muted);">
+                請仔細覆核即將送出至各平台的數值明細。您可以勾選排除特定平台，或勾選 Dry-Run 先行驗證。
+            </div>
+
+            <div id="modalTargetSummary" style="font-size: 14px; font-weight: 700; color: var(--teal);"></div>
+
+            <!-- 各站明細 -->
+            <div class="review-item-box">
+                <div class="review-site-header">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="checkS1" checked>
+                        <strong class="site-s1">S1 ChatGPT 互評站</strong>
+                    </label>
+                    <span id="modalValS1" style="font-family: monospace;">-</span>
+                </div>
+            </div>
+
+            <div class="review-item-box">
+                <div class="review-site-header">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="checkS2" checked>
+                        <strong class="site-s2">S2 Stanley Owen 評分網</strong>
+                    </label>
+                    <span id="modalValS2" style="font-family: monospace;">-</span>
+                </div>
+            </div>
+
+            <div class="review-item-box">
+                <div class="review-site-header">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="checkS3" checked>
+                        <strong class="site-s3">S3 Google 表單</strong>
+                    </label>
+                    <span id="modalValS3" style="font-family: monospace;">-</span>
+                </div>
+            </div>
+
+            <div class="review-item-box">
+                <div class="review-site-header">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="checkS4" checked>
+                        <strong class="site-s4">S4 NLA 平台</strong>
+                    </label>
+                    <span id="modalValS4" style="font-family: monospace;">-</span>
+                </div>
+            </div>
+
+            <!-- 模式切換 -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 245, 212, 0.08); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(0, 245, 212, 0.2);">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="checkDryRun" checked>
+                    <strong>預設 Dry-Run 演練模式（不寫入正式紀錄）</strong>
+                </label>
+                <span style="font-size: 11px; color: var(--teal);">建議先演練一次</span>
+            </div>
+
+            <div id="modalSubmitFeedback" style="display: none; padding: 10px; border-radius: 6px; font-size: 13px;"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="btnModalCancel">取消</button>
+                <button type="button" class="btn-confirm-submit" id="btnConfirmSubmit">確認執行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 首次使用帳號密碼設定視窗 (Setup Modal) -->
+    <!-- 帳號設定與身分覆核視窗 (Setup / Confirm Modal) -->
+    <div class="modal-overlay" id="setupModal">
+        <div class="modal-content" style="width: 540px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span id="setupModalTitle">🔐 初次使用：強制登入設定</span>
+                </div>
+                <button class="modal-close" id="btnSetupClose">&times;</button>
+            </div>
+
+            <!-- 視圖 A: 帳號密碼登入表單 -->
+            <div id="setupFormView">
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px;">
+                    請輸入您的學號與各平台登入資訊。本工具僅於本機儲存憑證（絕不上傳任何外部伺服器），並會在後台真實瀏覽器中自動為您登入與同步 Session。
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- 學號與姓名 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label style="font-size: 12px; color: var(--teal); font-weight: 700; display: block; margin-bottom: 4px;">
+                                學號 (S1 / S4 帳號) *
+                            </label>
+                            <div style="display: flex; gap: 6px;">
+                                <input type="text" id="setupStudentId" class="student-select" placeholder="例：B11415001" required>
+                                <button type="button" id="btnAutoQueryName" class="btn-tab-ctrl" style="white-space: nowrap;">🔍 查名</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: var(--teal); font-weight: 700; display: block; margin-bottom: 4px;">
+                                姓名 (Google 表單使用) *
+                            </label>
+                            <input type="text" id="setupStudentName" class="student-select" placeholder="例：王小明" required>
+                        </div>
+                    </div>
+
+                    <!-- Google 表單通知信箱 -->
+                    <div>
+                        <label style="font-size: 12px; color: var(--pink); font-weight: 700; display: block; margin-bottom: 4px;">
+                            Google 表單通知電子郵件 *
+                        </label>
+                        <input type="email" id="setupEmail" class="student-select" placeholder="例：student@example.com" required>
+                    </div>
+
+                    <!-- Stanley Owen 評分網 (S2) -->
+                    <div style="background: rgba(255, 117, 160, 0.05); border: 1px solid rgba(255, 117, 160, 0.2); border-radius: 8px; padding: 10px;">
+                        <span style="font-size: 12px; color: var(--pink); font-weight: 700; display: block; margin-bottom: 6px;">
+                            S2: Stanley Owen 評分網
+                        </span>
+                        <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px;">
+                            <input type="email" id="setupS2Email" class="student-select" placeholder="學校信箱 (自動連動)">
+                            <div class="password-input-group">
+                                <input type="password" id="setupS2Password" class="student-select" placeholder="登入密碼">
+                                <button type="button" class="btn-toggle-pwd" data-target="setupS2Password" title="顯示密碼">👁️</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NLA 互評平台 (S4) -->
+                    <div style="background: rgba(121, 40, 202, 0.08); border: 1px solid rgba(121, 40, 202, 0.3); border-radius: 8px; padding: 10px;">
+                        <span style="font-size: 12px; color: #D6BCFA; font-weight: 700; display: block; margin-bottom: 6px;">
+                            S4: NLA 同儕互評平台
+                        </span>
+                        <div class="password-input-group">
+                            <input type="password" id="setupS4Password" class="student-select" placeholder="登入密碼 (預設同大寫學號，或自訂密碼)">
+                            <button type="button" class="btn-toggle-pwd" data-target="setupS4Password" title="顯示密碼">👁️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="setupFeedback" style="display: none; padding: 10px; border-radius: 6px; font-size: 13px; margin-top: 10px;"></div>
+
+                <div class="modal-actions" style="margin-top: 14px;">
+                    <button type="button" class="btn-secondary" id="btnSetupCancel">關閉</button>
+                    <button type="button" class="btn-confirm-submit" id="btnSaveSetup">🔐 儲存並在瀏覽器登入驗證</button>
+                </div>
+            </div>
+
+            <!-- 視圖 B: 登入後身分與四大平台覆核確認 -->
+            <div id="setupConfirmView" style="display: none; flex-direction: column; gap: 14px;">
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                    登入與驗證已就緒！請核對以下評分者身分與四大平台狀態，確認無誤後點擊「開始評分」即可啟用儀表板。
+                </div>
+
+                <!-- 評分者資訊卡 -->
+                <div style="background: rgba(0, 245, 212, 0.05); border: 1px solid rgba(0, 245, 212, 0.3); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--teal); letter-spacing: 0.5px;">👤 評分者身分資訊</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                        <div>評分學號：<strong id="confirmStudentId" style="color: #fff;">-</strong></div>
+                        <div>評分姓名：<strong id="confirmStudentName" style="color: #fff;">-</strong></div>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        通知信箱：<span id="confirmEmail" style="color: var(--pink); font-family: monospace;">-</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        學校信箱：<span id="confirmS2Email" style="color: var(--pink); font-family: monospace;">-</span>
+                    </div>
+                </div>
+
+                <!-- 四大平台狀態卡 -->
+                <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 700; color: #A0AEC0;">⚡ 四大平台連線狀態</div>
+                    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="site-s1">S1 ChatGPT 互評站</span>
+                            <span id="confirmStatusS1" style="color: #48BB78; font-weight: 700;">✅ 已查詢姓名並進駐評分頁</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="site-s2">S2 Stanley 評分網</span>
+                            <span id="confirmStatusS2" style="color: #48BB78; font-weight: 700;">✅ 帳號認證成功 (已登入)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="site-s3">S3 Google 表單</span>
+                            <span id="confirmStatusS3" style="color: #ED8936; font-weight: 700;">⚠️ S3: 已跳過 (需要登入 Google 帳號)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="site-s4">S4 NLA 互評平台</span>
+                            <span id="confirmStatusS4" style="color: #48BB78; font-weight: 700;">✅ Session 認證有效</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4; background: rgba(0, 187, 249, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 187, 249, 0.2);">
+                    💡 提示：點擊下方按鈕後即可開始自由評分。自我互評防呆已自動啟用；受評組別可於面板自訂 (1~50 組)。
+                </div>
+
+                <div class="modal-actions" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <button type="button" class="btn-secondary" id="btnBackToSetupForm">✏️ 修改登入設定</button>
+                    <button type="button" class="btn-confirm-submit" id="btnConfirmStart" style="padding: 10px 22px; font-size: 14px; font-weight: 800;">🚀 確認無誤，開始評分！</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版本資訊與更新彈窗 (Release & Update Modal) -->
+    <div class="modal-overlay" id="versionModal">
+        <div class="modal-content" style="max-width: 520px; width: 92%;">
+            <div class="modal-header">
+                <span class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span>🚀</span>
+                    <span>系統版本與更新管理</span>
+                </span>
+                <button type="button" class="btn-modal-close" id="btnVersionModalClose" style="background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer;">&times;</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 10px;">
+                <!-- 雙版本對比卡片 -->
+                <div class="version-compare-card" id="versionCompareCard">
+                    <div class="version-compare-col">
+                        <div class="compare-label">本地目前版本</div>
+                        <div class="compare-val" id="modalLocalVersion">v--</div>
+                        <div class="compare-sub" id="modalLocalStatus">使用中</div>
+                    </div>
+                    <div class="version-compare-arrow">➔</div>
+                    <div class="version-compare-col">
+                        <div class="compare-label">最新發布版本</div>
+                        <div class="compare-val" id="modalLatestVersion">v--</div>
+                        <div class="compare-sub" id="modalLatestStatus">雲端即時同步</div>
+                    </div>
+                </div>
+
+                <!-- 狀態警示橫幅 -->
+                <div class="version-status-banner" id="versionStatusBanner">
+                    <div class="status-banner-icon" id="statusBannerIcon">✅</div>
+                    <div class="status-banner-text" id="statusBannerText">
+                        目前已是最新版本！所有功能正常運作中。
+                    </div>
+                </div>
+
+                <!-- 檢查時間戳記 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); padding: 0 4px;">
+                    <span>最後檢查時間：<span id="modalLastCheckedTime">剛剛</span></span>
+                    <button type="button" id="btnVersionRefresh" style="background: none; border: none; color: var(--teal); cursor: pointer; text-decoration: underline; font-size: 11px;">🔄 立即檢查最新版</button>
+                </div>
+
+                <!-- 更新說明 / 亮點 (若有則顯示) -->
+                <div class="version-changelog-card" id="versionChangelogCard" style="display: none;">
+                    <div class="changelog-title">📋 新版更新重點</div>
+                    <div class="changelog-content" id="modalChangelogContent"></div>
+                </div>
+
+                <!-- 智慧更新安全保證卡 -->
+                <div class="version-guide-card" id="versionSafeGuideCard">
+                    <div style="font-size: 12px; font-weight: 700; color: #A0AEC0; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                        <span>🛡️</span>
+                        <span>一鍵無縫更新安全保障</span>
+                    </div>
+                    <ul style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin: 0; padding-left: 18px;">
+                        <li>更新前系統將自動儲存您目前編輯的評分草稿與評論。</li>
+                        <li>您的個人帳號設定 (<code>credentials.json</code>) 與各平台登入 Session 均獲完整保護，絕不丟失。</li>
+                        <li>由核心啟動器接手下載、安裝與重啟，本網頁將自動重新連線並還原內容。</li>
+                    </ul>
+                </div>
+
+                <!-- 行動按鈕列 -->
+                <div class="modal-actions" style="margin-top: 6px; display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
+                    <button type="button" class="btn-secondary" id="btnUpdateLater" style="padding: 8px 16px; font-size: 13px;">關閉</button>
+                    <button type="button" class="btn-confirm-submit" id="btnDoAutoUpdate" style="display: none; padding: 8px 18px; font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #10B981, #059669); border-color: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);">
+                        <span>🚀</span>
+                        <span>更新並重新啟動</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系統更新執行中全螢幕遮罩 (Update Progress Overlay) -->
+    <div id="updateProgressOverlay" style="display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(10, 14, 23, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); flex-direction: column; align-items: center; justify-content: center; color: #fff;">
+        <div style="max-width: 440px; width: 90%; background: rgba(26, 32, 44, 0.95); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+            <div style="width: 50px; height: 50px; border-radius: 50%; border: 3px solid rgba(45, 212, 191, 0.2); border-top-color: #2DD4BF; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+            <div id="updateOverlayTitle" style="font-size: 18px; font-weight: 700; color: #F3F4F6; margin-bottom: 8px;">🔄 正在自動更新並重新啟動...</div>
+            <div id="updateOverlayStatus" style="font-size: 13px; color: #9CA3AF; line-height: 1.6; margin-bottom: 16px;">
+                正在下載新版檔案並由核心啟動器安全安裝。<br>您的帳號與評分草稿已安全保存，伺服器重啟後將自動無縫重新連線！
+            </div>
+            <div style="font-size: 11px; color: #6B7280; font-family: monospace;" id="updateOverlaySub">
+                請勿關閉此網頁視窗...
+            </div>
+        </div>
+    </div>
+
+    <!-- 腳本引入 -->
+    <script src="/static/js/score_engine.js"></script>
+    <script src="/static/js/gacha.js"></script>
+    <script src="/static/js/mascot.js"></script>
+    <script src="/static/js/orb_border_controller.js"></script>
+    <script src="/static/js/app.js"></script>
+
+    <!-- 日系幾何彈性輪播腳本 (yui540 動漫彈簧風，無 yui / 無章節標籤) -->
+    <script>
+    (function initSpringTicker() {
+        const tickerContainer = document.getElementById('tickerContainer');
+        if (!tickerContainer) return;
+
+        const scenes = [
+            { text: 'NTUST', inClass: 'enter-left', outClass: 'exit-right' },
+            { text: 'CSIE', inClass: 'enter-bottom', outClass: 'exit-top' }
+        ];
+
+        let currentIndex = 0;
+
+        function renderScene() {
+            const current = scenes[currentIndex];
+            tickerContainer.innerHTML = '';
+
+            const chars = current.text.split('');
+            chars.forEach((char, index) => {
+                const box = document.createElement('div');
+                box.className = `ticker-box ${current.inClass}`;
+                box.style.setProperty('--i', index);
+                box.textContent = char;
+                tickerContainer.appendChild(box);
+            });
+
+            // 停留展示約 2.2 秒後觸發可愛離場
+            setTimeout(() => {
+                const boxes = tickerContainer.querySelectorAll('.ticker-box');
+                boxes.forEach(box => {
+                    box.classList.remove(current.inClass);
+                    box.classList.add(current.outClass);
+                });
+
+                // 離場結束後切換下一組文字 (動畫 450ms + 100ms 緩衝)
+                setTimeout(() => {
+                    currentIndex = (currentIndex + 1) % scenes.length;
+                    renderScene();
+                }, 550);
+            }, 2200);
+        }
+
+        renderScene();
+    })();
+
+    // 一鍵複製聯絡信箱功能
+    function copyContactEmail(email) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(email).then(() => {
+                const btn = document.getElementById('btnCopyFooterEmail');
+                if (btn) {
+                    const origHtml = btn.innerHTML;
+                    btn.innerHTML = '✅ 已複製！';
+                    btn.style.borderColor = 'var(--teal)';
+                    btn.style.color = 'var(--teal)';
+                    setTimeout(() => {
+                        btn.innerHTML = origHtml;
+                        btn.style.borderColor = '';
+                        btn.style.color = '';
+                    }, 1800);
+                }
+            }).catch(() => {
+                prompt('請手動複製信箱地址：', email);
+            });
+        } else {
+            prompt('請手動複製信箱地址：', email);
+        }
+    }
+    </script>
+</body>
+</html>
